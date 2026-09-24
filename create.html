@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Connect Four - New Game</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="wrapper">
+    <h1>Connect Four 🎉</h1>
+    <p class="subtitle">Enter your name, then send the link to whoever you're playing.</p>
+
+    <form action="{{ url_for('create_game_route') }}" method="POST" class="name-form">
+      <div class="name-field">
+        <label for="player1">Your name</label>
+        <div class="name-color-row">
+          <input type="text" id="player1" name="player1" maxlength="20" placeholder="e.g. Alex" required autofocus>
+          <input type="color" id="color1" name="color1" value="#ef4444" class="color-swatch" title="Your color">
+        </div>
+      </div>
+      <button type="submit" class="start-btn">Create Game 🚀</button>
+    </form>
+
+    <a href="{{ url_for('records') }}" class="records-link">🏆 View Records</a>
+  </div>
+</body>
+</html>

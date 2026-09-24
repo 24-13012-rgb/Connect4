@@ -1,0 +1,740 @@
+from flask import Flask, render_template, session, jsonify, request, redirect, url_for
+import sqlite3
+import os
+import re
+import calendar
+import random
+import string
+import time
+from datetime import datetime, timedelta
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "connect4-booth-secret")  # override via env var when deployed publicly
+
+# When deployed behind a hosting platform's reverse proxy (Render, Railway,
+# etc.), the proxy terminates HTTPS and forwards plain HTTP internally. This
+# tells Flask to trust the proxy's X-Forwarded-* headers so url_for(...,
+# _external=True) builds correct https:// join links instead of http://.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+ROWS = 6
+COLS = 7
+DB_PATH = os.path.join(os.path.dirname(__file__), "records.db")
+
+# ---------- Shared game rooms ----------
+# Games used to live entirely in the per-browser session, which meant two
+# different devices could never actually play each other -- each one just
+# got its own private, empty game. Now a game lives here, in memory, keyed
+# by a short room code that both devices share. Each browser's session just
+# remembers which room it's in and whether it's Player 1 or Player 2.
+GAMES = {}
+
+# Characters chosen to avoid look-alikes (no 0/O, 1/I/L) so a code is easy
+# to read aloud or type on a phone.
+ROOM_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+
+def generate_room_code():
+    for _ in range(50):
+        code = "".join(random.choices(ROOM_CODE_ALPHABET, k=5))
+        if code not in GAMES:
+            return code
+    raise RuntimeError("Could not generate a unique room code")
+
+
+def create_game(player1_name, player1_color):
+    code = generate_room_code()
+    GAMES[code] = {
+        "board": new_board(),
+        "turn": 1,
+        "winner": 0,
+        "scores": {"1": 0, "2": 0},
+        "player1_name": player1_name,
+        "player1_color": player1_color,
+        "player2_name": None,
+        "player2_color": None,
+        "player2_joined": False,
+        "last_move": None,
+        "created_at": time.time(),
+    }
+    return code
+
+
+def get_game(room_id):
+    return GAMES.get(room_id)
+
+
+def game_state_json(game):
+    color1 = game["player1_color"]
+    color2 = game["player2_color"] or DEFAULT_COLOR_2
+    last_move = game.get("last_move") or {}
+    return {
+        "board": game["board"],
+        "turn": game["turn"],
+        "winner": game["winner"],
+        "scores": game["scores"],
+        "player1_name": game["player1_name"],
+        "player2_name": game["player2_name"],
+        "player1_color": color1,
+        "player2_color": color2,
+        "player1_color_light": shade_hex(color1, 60),
+        "player2_color_light": shade_hex(color2, 60),
+        "player2_joined": game["player2_joined"],
+        "row": last_move.get("row"),
+        "col": last_move.get("col"),
+        "move_id": last_move.get("move_id", 0),
+    }
+
+# Bump this any time static/script.js or static/style.css change.
+# It's appended as a query string on those files, which forces browsers
+# to fetch the new version instead of serving a stale cached copy.
+ASSET_VERSION = "11"
+
+DEFAULT_COLOR_1 = "#ef4444"  # red
+DEFAULT_COLOR_2 = "#eab308"  # yellow
+
+
+@app.context_processor
+def inject_asset_version():
+    return {"asset_version": ASSET_VERSION}
+
+
+def is_valid_hex_color(value):
+    return bool(re.fullmatch(r"#[0-9a-fA-F]{6}", value or ""))
+
+
+def shade_hex(hex_color, amount):
+    """Lighten (positive amount) or darken (negative amount) a hex color."""
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+    r = max(0, min(255, r + amount))
+    g = max(0, min(255, g + amount))
+    b = max(0, min(255, b + amount))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+# ---------- Database ----------
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    conn = get_db()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS matches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player1 TEXT NOT NULL,
+            player2 TEXT NOT NULL,
+            winner TEXT,
+            is_draw INTEGER NOT NULL DEFAULT 0,
+            played_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS hidden_players (
+            name TEXT PRIMARY KEY,
+            hidden_at TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+init_db()
+
+
+def log_match(player1, player2, winner, is_draw):
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO matches (player1, player2, winner, is_draw, played_at) VALUES (?, ?, ?, ?, ?)",
+        (player1, player2, winner, 1 if is_draw else 0, datetime.now().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def hide_player(name):
+    conn = get_db()
+    conn.execute(
+        "INSERT OR REPLACE INTO hidden_players (name, hidden_at) VALUES (?, ?)",
+        (name, datetime.now().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def unhide_player(name):
+    conn = get_db()
+    conn.execute("DELETE FROM hidden_players WHERE name = ?", (name,))
+    conn.commit()
+    conn.close()
+
+
+def get_hidden_players():
+    conn = get_db()
+    rows = conn.execute("SELECT name FROM hidden_players").fetchall()
+    conn.close()
+    return {row["name"] for row in rows}
+
+
+def get_hidden_players_list():
+    """Full details of removed players, most recently removed first."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT name, hidden_at FROM hidden_players ORDER BY hidden_at DESC"
+    ).fetchall()
+    conn.close()
+    result = []
+    for row in rows:
+        hidden_dt = datetime.fromisoformat(row["hidden_at"])
+        result.append(
+            {
+                "name": row["name"],
+                "hidden_at": hidden_dt.strftime("%b %d, %Y %I:%M %p").replace(" 0", " "),
+            }
+        )
+    return result
+
+
+def get_records(period):
+    now = datetime.now()
+    if period == "daily":
+        since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif period == "weekly":
+        since = now - timedelta(days=now.weekday())
+        since = since.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif period == "monthly":
+        since = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        since = datetime.min
+
+    hidden = get_hidden_players()
+
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT player1, player2, winner, is_draw FROM matches WHERE played_at >= ?",
+        (since.isoformat(),),
+    ).fetchall()
+    conn.close()
+
+    stats = {}
+    for row in rows:
+        for name in (row["player1"], row["player2"]):
+            if name in hidden:
+                continue
+            if name not in stats:
+                stats[name] = {"name": name, "games": 0, "wins": 0, "draws": 0}
+
+        if row["player1"] not in hidden:
+            stats[row["player1"]]["games"] += 1
+        if row["player2"] not in hidden:
+            stats[row["player2"]]["games"] += 1
+
+        if row["is_draw"]:
+            if row["player1"] not in hidden:
+                stats[row["player1"]]["draws"] += 1
+            if row["player2"] not in hidden:
+                stats[row["player2"]]["draws"] += 1
+        elif row["winner"] and row["winner"] not in hidden:
+            stats[row["winner"]]["wins"] += 1
+
+    leaderboard = sorted(
+        stats.values(), key=lambda s: (-s["wins"], -s["games"], s["name"])
+    )
+    return leaderboard
+
+
+def get_weekly_breakdown():
+    """Returns one entry per day, Monday through Sunday, for the current week."""
+    now = datetime.now()
+    monday = (now - timedelta(days=now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    hidden = get_hidden_players()
+
+    conn = get_db()
+    days = []
+    for i in range(7):
+        day_start = monday + timedelta(days=i)
+        day_end = day_start + timedelta(days=1)
+        rows = conn.execute(
+            "SELECT player1, player2, winner, is_draw FROM matches "
+            "WHERE played_at >= ? AND played_at < ?",
+            (day_start.isoformat(), day_end.isoformat()),
+        ).fetchall()
+
+        wins = {}
+        for row in rows:
+            if row["is_draw"]:
+                continue
+            winner_name = row["winner"]
+            if winner_name and winner_name not in hidden:
+                wins[winner_name] = wins.get(winner_name, 0) + 1
+
+        top_player = None
+        top_wins = 0
+        for name, count in wins.items():
+            if count > top_wins:
+                top_player = name
+                top_wins = count
+
+        days.append(
+            {
+                "label": day_start.strftime("%a"),
+                "date": day_start.strftime("%b %d"),
+                "date_iso": day_start.strftime("%Y-%m-%d"),
+                "games": len(rows),
+                "top_player": top_player,
+                "top_wins": top_wins,
+                "is_today": day_start.date() == now.date(),
+            }
+        )
+    conn.close()
+    return days
+
+
+def get_monthly_breakdown(year=None, month=None):
+    """Returns a calendar-style breakdown (weeks of days) for the given month,
+    defaulting to the current month, along with prev/next navigation info."""
+    now = datetime.now()
+    if year is None:
+        year = now.year
+    if month is None:
+        month = now.month
+
+    first_weekday, days_in_month = calendar.monthrange(year, month)  # 0 = Monday
+
+    month_start = datetime(year, month, 1)
+    if month == 12:
+        month_end = datetime(year + 1, 1, 1)
+    else:
+        month_end = datetime(year, month + 1, 1)
+
+    hidden = get_hidden_players()
+
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT player1, player2, winner, is_draw, played_at FROM matches "
+        "WHERE played_at >= ? AND played_at < ?",
+        (month_start.isoformat(), month_end.isoformat()),
+    ).fetchall()
+    conn.close()
+
+    # Tally games played and wins for each day number in the month
+    per_day = {d: {"games": 0, "wins": {}} for d in range(1, days_in_month + 1)}
+    for row in rows:
+        played_dt = datetime.fromisoformat(row["played_at"])
+        d = played_dt.day
+        per_day[d]["games"] += 1
+        if not row["is_draw"] and row["winner"] and row["winner"] not in hidden:
+            per_day[d]["wins"][row["winner"]] = per_day[d]["wins"].get(row["winner"], 0) + 1
+
+    day_cells = {}
+    for d in range(1, days_in_month + 1):
+        wins = per_day[d]["wins"]
+        top_player = None
+        top_wins = 0
+        for name, count in wins.items():
+            if count > top_wins:
+                top_player = name
+                top_wins = count
+
+        weekday = (first_weekday + d - 1) % 7  # 0 = Monday ... 6 = Sunday
+
+        day_cells[d] = {
+            "day": d,
+            "date_iso": f"{year:04d}-{month:02d}-{d:02d}",
+            "games": per_day[d]["games"],
+            "top_player": top_player,
+            "top_wins": top_wins,
+            "is_today": (year == now.year and month == now.month and d == now.day),
+            "is_weekend": weekday in (5, 6),
+        }
+
+    # Lay the days out into calendar weeks, Monday first, padding with None
+    weeks = []
+    week = [None] * first_weekday
+    for d in range(1, days_in_month + 1):
+        week.append(day_cells[d])
+        if len(week) == 7:
+            weeks.append(week)
+            week = []
+    if week:
+        while len(week) < 7:
+            week.append(None)
+        weeks.append(week)
+
+    # Previous/next month for navigation
+    if month == 1:
+        prev_year, prev_month = year - 1, 12
+    else:
+        prev_year, prev_month = year, month - 1
+    if month == 12:
+        next_year, next_month = year + 1, 1
+    else:
+        next_year, next_month = year, month + 1
+
+    total_games = sum(cell["games"] for cell in day_cells.values())
+
+    return {
+        "month_name": month_start.strftime("%B %Y"),
+        "weeks": weeks,
+        "year": year,
+        "month": month,
+        "prev_year": prev_year,
+        "prev_month": prev_month,
+        "next_year": next_year,
+        "next_month": next_month,
+        "is_current_month": (year == now.year and month == now.month),
+        "total_games": total_games,
+    }
+
+
+def get_matches_for_date(date_str):
+    """Returns the raw list of matches played on a given YYYY-MM-DD date."""
+    day_start = datetime.strptime(date_str, "%Y-%m-%d")
+    day_end = day_start + timedelta(days=1)
+
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT player1, player2, winner, is_draw, played_at FROM matches "
+        "WHERE played_at >= ? AND played_at < ? ORDER BY played_at",
+        (day_start.isoformat(), day_end.isoformat()),
+    ).fetchall()
+    conn.close()
+
+    matches = []
+    for row in rows:
+        played_dt = datetime.fromisoformat(row["played_at"])
+        matches.append(
+            {
+                "player1": row["player1"],
+                "player2": row["player2"],
+                "winner": row["winner"],
+                "is_draw": bool(row["is_draw"]),
+                "time": played_dt.strftime("%I:%M %p").lstrip("0"),
+            }
+        )
+    return matches
+
+
+def get_alltime_summary():
+    """Total games ever played and the date of the very first game."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT COUNT(*) as cnt, MIN(played_at) as first_date FROM matches"
+    ).fetchone()
+    conn.close()
+
+    total_games = row["cnt"] or 0
+    first_date = None
+    if row["first_date"]:
+        first_date = datetime.fromisoformat(row["first_date"]).strftime("%b %d, %Y")
+
+    return {"total_games": total_games, "first_date": first_date}
+
+
+# ---------- Game state helpers ----------
+
+def new_board():
+    return [[0 for _ in range(COLS)] for _ in range(ROWS)]
+
+
+def drop_piece(board, col, player):
+    for row in range(ROWS - 1, -1, -1):
+        if board[row][col] == 0:
+            board[row][col] = player
+            return row
+    return None
+
+
+def check_winner(board, row, col, player):
+    directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+    for dr, dc in directions:
+        count = 1
+        r, c = row + dr, col + dc
+        while 0 <= r < ROWS and 0 <= c < COLS and board[r][c] == player:
+            count += 1
+            r += dr
+            c += dc
+        r, c = row - dr, col - dc
+        while 0 <= r < ROWS and 0 <= c < COLS and board[r][c] == player:
+            count += 1
+            r -= dr
+            c -= dc
+        if count >= 4:
+            return True
+    return False
+
+
+def is_draw(board):
+    return all(board[0][c] != 0 for c in range(COLS))
+
+
+# ---------- Routes ----------
+
+@app.route("/")
+def home():
+    room_id = session.get("room_id")
+    if room_id and get_game(room_id):
+        return redirect(url_for("game", room_id=room_id))
+    return redirect(url_for("create_game_route"))
+
+
+@app.route("/create", methods=["GET", "POST"])
+def create_game_route():
+    if request.method == "GET":
+        return render_template("create.html")
+
+    p1 = request.form.get("player1", "").strip()[:20] or "Red"
+    color1 = request.form.get("color1", "").strip()
+    if not is_valid_hex_color(color1):
+        color1 = DEFAULT_COLOR_1
+
+    room_id = create_game(p1, color1)
+
+    session.clear()
+    session["room_id"] = room_id
+    session["player_num"] = 1
+    return redirect(url_for("game", room_id=room_id))
+
+
+@app.route("/join/<room_id>", methods=["GET", "POST"])
+def join_game(room_id):
+    room_id = room_id.upper()
+    game = get_game(room_id)
+    if not game:
+        return render_template("join.html", room_id=room_id, error="not_found"), 404
+
+    # If this browser is already player 1 or already-joined player 2 for this
+    # exact room, just send it straight to the board instead of re-joining.
+    if session.get("room_id") == room_id and session.get("player_num") in (1, 2):
+        return redirect(url_for("game", room_id=room_id))
+
+    if game["player2_joined"]:
+        return render_template("join.html", room_id=room_id, error="full"), 409
+
+    if request.method == "GET":
+        return render_template(
+            "join.html", room_id=room_id, host_name=game["player1_name"], error=None
+        )
+
+    p2 = request.form.get("player2", "").strip()[:20] or "Yellow"
+    color2 = request.form.get("color2", "").strip()
+    if not is_valid_hex_color(color2):
+        color2 = DEFAULT_COLOR_2
+    # Nudge player 2's color away from an accidental exact match with player 1.
+    if color2.lower() == game["player1_color"].lower():
+        color2 = DEFAULT_COLOR_2 if color2.lower() != DEFAULT_COLOR_2 else DEFAULT_COLOR_1
+
+    game["player2_name"] = p2
+    game["player2_color"] = color2
+    game["player2_joined"] = True
+
+    session.clear()
+    session["room_id"] = room_id
+    session["player_num"] = 2
+    return redirect(url_for("game", room_id=room_id))
+
+
+@app.route("/game/<room_id>")
+def game(room_id):
+    room_id = room_id.upper()
+    game = get_game(room_id)
+    if not game:
+        return redirect(url_for("create_game_route"))
+
+    # Whoever's browser this is needs to actually belong to the room (as
+    # player 1 or player 2) before we show them the board.
+    if session.get("room_id") != room_id or session.get("player_num") not in (1, 2):
+        return redirect(url_for("join_game", room_id=room_id))
+
+    player_num = session["player_num"]
+    color1 = game["player1_color"]
+    color2 = game["player2_color"] or DEFAULT_COLOR_2
+
+    return render_template(
+        "index.html",
+        room_id=room_id,
+        player_num=player_num,
+        join_url=url_for("join_game", room_id=room_id, _external=True),
+        board=game["board"],
+        turn=game["turn"],
+        winner=game["winner"],
+        scores=game["scores"],
+        player1_name=game["player1_name"],
+        player2_name=game["player2_name"] or "Waiting…",
+        player2_joined=game["player2_joined"],
+        player1_color=color1,
+        player2_color=color2,
+        player1_color_light=shade_hex(color1, 60),
+        player1_color_dark=shade_hex(color1, -50),
+        player2_color_light=shade_hex(color2, 60),
+        player2_color_dark=shade_hex(color2, -50),
+    )
+
+
+@app.route("/state/<room_id>")
+def state(room_id):
+    room_id = room_id.upper()
+    game = get_game(room_id)
+    if not game:
+        return jsonify(error="Game not found"), 404
+    return jsonify(game_state_json(game))
+
+
+@app.route("/move/<room_id>", methods=["POST"])
+def move(room_id):
+    room_id = room_id.upper()
+    game = get_game(room_id)
+    if not game:
+        return jsonify(error="Game not found"), 404
+    if session.get("room_id") != room_id or session.get("player_num") not in (1, 2):
+        return jsonify(error="You're not a player in this game"), 403
+    if not game["player2_joined"]:
+        return jsonify(error="Waiting for the other player to join"), 400
+
+    player_num = session["player_num"]
+    board, turn, winner = game["board"], game["turn"], game["winner"]
+
+    if winner != 0:
+        return jsonify(game_state_json(game))
+
+    if player_num != turn:
+        return jsonify(error="It's not your turn"), 409
+
+    col = int((request.json or {}).get("col", -1))
+    if col < 0 or col >= COLS:
+        return jsonify(error="Invalid column"), 400
+
+    row = drop_piece(board, col, turn)
+    if row is None:
+        return jsonify(game_state_json(game))
+
+    p1 = game["player1_name"]
+    p2 = game["player2_name"]
+
+    if check_winner(board, row, col, turn):
+        winner = turn
+        game["scores"][str(turn)] += 1
+        winner_name = p1 if turn == 1 else p2
+        log_match(p1, p2, winner_name, is_draw=False)
+    elif is_draw(board):
+        winner = 3
+        log_match(p1, p2, winner=None, is_draw=True)
+    else:
+        turn = 2 if turn == 1 else 1
+
+    game["turn"] = turn
+    game["winner"] = winner
+    prev_move_id = (game.get("last_move") or {}).get("move_id", 0)
+    game["last_move"] = {"row": row, "col": col, "move_id": prev_move_id + 1}
+
+    return jsonify(game_state_json(game))
+
+
+@app.route("/reset/<room_id>", methods=["POST"])
+def reset(room_id):
+    room_id = room_id.upper()
+    game = get_game(room_id)
+    if not game:
+        return jsonify(error="Game not found"), 404
+    if session.get("room_id") != room_id or session.get("player_num") not in (1, 2):
+        return jsonify(error="You're not a player in this game"), 403
+
+    game["board"] = new_board()
+    game["turn"] = 1
+    game["winner"] = 0
+    game["last_move"] = None
+    return jsonify(game_state_json(game))
+
+
+@app.route("/reset_scores/<room_id>", methods=["POST"])
+def reset_scores(room_id):
+    room_id = room_id.upper()
+    game = get_game(room_id)
+    if not game:
+        return jsonify(error="Game not found"), 404
+    if session.get("room_id") != room_id or session.get("player_num") not in (1, 2):
+        return jsonify(error="You're not a player in this game"), 403
+
+    game["scores"] = {"1": 0, "2": 0}
+    return jsonify(game_state_json(game))
+
+
+@app.route("/new_players")
+def new_players():
+    session.clear()
+    return redirect(url_for("create_game_route"))
+
+
+@app.route("/records")
+def records():
+    period = request.args.get("period", "daily")
+    if period not in ("daily", "weekly", "monthly", "alltime"):
+        period = "daily"
+    leaderboard = get_records(period)
+    weekly_breakdown = get_weekly_breakdown() if period == "weekly" else None
+
+    monthly_breakdown = None
+    if period == "monthly":
+        year = request.args.get("year", type=int)
+        month = request.args.get("month", type=int)
+        monthly_breakdown = get_monthly_breakdown(year, month)
+
+    alltime_summary = get_alltime_summary() if period == "alltime" else None
+    hidden_list = get_hidden_players_list()
+
+    return render_template(
+        "records.html",
+        leaderboard=leaderboard,
+        period=period,
+        weekly_breakdown=weekly_breakdown,
+        monthly_breakdown=monthly_breakdown,
+        alltime_summary=alltime_summary,
+        hidden_list=hidden_list,
+    )
+
+
+@app.route("/records/day")
+def records_day():
+    date_str = request.args.get("date", "")
+    try:
+        matches = get_matches_for_date(date_str)
+    except ValueError:
+        return jsonify(error="Invalid date"), 400
+    return jsonify(date=date_str, matches=matches)
+
+
+@app.route("/records/hide", methods=["POST"])
+def records_hide():
+    name = (request.json or {}).get("name", "").strip()
+    if not name:
+        return jsonify(error="Missing name"), 400
+    hide_player(name)
+    return jsonify(ok=True, name=name)
+
+
+@app.route("/records/unhide", methods=["POST"])
+def records_unhide():
+    name = (request.json or {}).get("name", "").strip()
+    if not name:
+        return jsonify(error="Missing name"), 400
+    unhide_player(name)
+    return jsonify(ok=True, name=name)
+
+
+if __name__ == "__main__":
+    # host="0.0.0.0" makes the server reachable from other devices on the
+    # same network (not just this computer). threaded=True lets it handle
+    # several PCs/players hitting it at the same time without one request
+    # blocking another.
+    #
+    # PORT is read from the environment so this also works unchanged on
+    # hosting platforms (Render, Railway, etc.) that assign their own port.
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

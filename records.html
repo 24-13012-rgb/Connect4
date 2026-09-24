@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Connect Four - Records</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="wrapper">
+    <h1>🏆 Records 🏆</h1>
+
+    <div class="tabs">
+      <a href="{{ url_for('records', period='daily') }}" class="tab {{ 'active' if period == 'daily' }}">Daily</a>
+      <a href="{{ url_for('records', period='weekly') }}" class="tab {{ 'active' if period == 'weekly' }}">Weekly</a>
+      <a href="{{ url_for('records', period='monthly') }}" class="tab {{ 'active' if period == 'monthly' }}">Monthly</a>
+      <a href="{{ url_for('records', period='alltime') }}" class="tab {{ 'active' if period == 'alltime' }}">All Time</a>
+    </div>
+
+    <div class="removed-btn-row" style="text-align:center; margin-bottom: 18px;">
+      <button id="openRemovedBtn" class="link-btn">🗑️ Removed Players ({{ hidden_list|length }})</button>
+      <button id="printBtn" class="action-btn print-btn">🖨️ Print</button>
+    </div>
+
+    {% if period == 'weekly' and weekly_breakdown %}
+      <div class="week-strip">
+        {% for day in weekly_breakdown %}
+          <div class="day-card {{ 'day-today' if day.is_today }}" data-date="{{ day.date_iso }}" data-label="{{ day.label }}, {{ day.date }}">
+            <div class="day-label">{{ day.label }}</div>
+            <div class="day-date">{{ day.date }}</div>
+            <div class="day-games">{{ day.games }} game{{ 's' if day.games != 1 }}</div>
+            {% if day.top_player %}
+              <div class="day-top">🏆 {{ day.top_player }} ({{ day.top_wins }})</div>
+            {% else %}
+              <div class="day-top day-top-empty">—</div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+      <p class="tap-hint">Tap a day to see who played</p>
+    {% endif %}
+
+    {% if period == 'monthly' and monthly_breakdown %}
+      <div class="month-calendar">
+        <div class="month-header">
+          <a href="{{ url_for('records', period='monthly', year=monthly_breakdown.prev_year, month=monthly_breakdown.prev_month) }}" class="month-nav">‹</a>
+          <div class="month-header-text">
+            <div class="month-title">{{ monthly_breakdown.month_name }}</div>
+            <div class="month-subtitle">{{ monthly_breakdown.total_games }} game{{ 's' if monthly_breakdown.total_games != 1 }} played</div>
+          </div>
+          <a href="{{ url_for('records', period='monthly', year=monthly_breakdown.next_year, month=monthly_breakdown.next_month) }}" class="month-nav">›</a>
+        </div>
+
+        {% if not monthly_breakdown.is_current_month %}
+          <div class="month-jump-today">
+            <a href="{{ url_for('records', period='monthly') }}">Jump to this month</a>
+          </div>
+        {% endif %}
+
+        <div class="calendar-grid">
+          <div class="cal-header">Mon</div>
+          <div class="cal-header">Tue</div>
+          <div class="cal-header">Wed</div>
+          <div class="cal-header">Thu</div>
+          <div class="cal-header">Fri</div>
+          <div class="cal-header cal-header-weekend">Sat</div>
+          <div class="cal-header cal-header-weekend">Sun</div>
+
+          {% for week in monthly_breakdown.weeks %}
+            {% for day in week %}
+              {% if day %}
+                <div class="cal-day
+                  {{ 'cal-today' if day.is_today }}
+                  {{ 'cal-has-games' if day.games > 0 }}
+                  {{ 'cal-weekend' if day.is_weekend }}"
+                  data-date="{{ day.date_iso }}"
+                  data-label="{{ monthly_breakdown.month_name }} {{ day.day }}">
+                  <div class="cal-day-num">{{ day.day }}</div>
+                  {% if day.games > 0 %}
+                    <div class="cal-day-games">{{ day.games }} 🎮</div>
+                    {% if day.top_player %}
+                      <div class="cal-day-top">🏆 {{ day.top_player }}</div>
+                    {% endif %}
+                  {% endif %}
+                </div>
+              {% else %}
+                <div class="cal-day cal-day-empty"></div>
+              {% endif %}
+            {% endfor %}
+          {% endfor %}
+        </div>
+      </div>
+      <p class="tap-hint">Tap a date to see who played</p>
+    {% endif %}
+
+    {% if period == 'alltime' and alltime_summary %}
+      <div class="alltime-summary">
+        <div class="alltime-card">
+          <div class="alltime-icon">🏆</div>
+          <div class="alltime-label">Champion</div>
+          <div class="alltime-value">{{ leaderboard[0].name if leaderboard else '—' }}</div>
+        </div>
+        <div class="alltime-card">
+          <div class="alltime-icon">🎮</div>
+          <div class="alltime-label">Total games</div>
+          <div class="alltime-value">{{ alltime_summary.total_games }}</div>
+        </div>
+        <div class="alltime-card">
+          <div class="alltime-icon">📅</div>
+          <div class="alltime-label">Playing since</div>
+          <div class="alltime-value alltime-value-small">{{ alltime_summary.first_date or 'No games yet' }}</div>
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="leaderboard">
+      {% if leaderboard %}
+        <table class="records-table" id="recordsTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Player</th>
+              <th>Wins</th>
+              <th>Games</th>
+              <th>Draws</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in leaderboard %}
+            <tr data-name="{{ row.name }}">
+              <td>{{ loop.index }}{% if loop.index == 1 and period == 'alltime' %} 👑{% endif %}</td>
+              <td>{{ row.name }}</td>
+              <td class="wins">{{ row.wins }}</td>
+              <td>{{ row.games }}</td>
+              <td>{{ row.draws }}</td>
+              <td>
+                <button class="remove-btn" data-name="{{ row.name }}" title="Remove {{ row.name }}">✕</button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="empty-state" id="emptyState">No games played in this period yet.</p>
+      {% endif %}
+    </div>
+
+    <div class="controls" style="margin-top: 24px;">
+      <a href="{{ url_for('home') }}" class="action-btn blue-btn">🎮 Back to Game</a>
+    </div>
+  </div>
+
+  <div id="undoBanner" class="undo-banner hidden">
+    <span id="undoText"></span>
+    <button id="undoBtn">Undo</button>
+  </div>
+
+  <div id="dayModal" class="modal hidden">
+    <div class="modal-content day-modal-content">
+      <h2 id="dayModalTitle">Day</h2>
+      <div id="dayModalList" class="day-modal-list"></div>
+      <button id="dayModalCloseBtn">Close</button>
+    </div>
+  </div>
+
+  <div id="removedModal" class="modal hidden">
+    <div class="modal-content day-modal-content">
+      <h2>🗑️ Removed Players</h2>
+      <div class="removed-list">
+        {% if hidden_list %}
+          {% for p in hidden_list %}
+            <div class="removed-item" data-name="{{ p.name }}">
+              <div>
+                <div class="removed-item-name">{{ p.name }}</div>
+                <div class="removed-item-date">Removed {{ p.hidden_at }}</div>
+              </div>
+              <button class="restore-btn" data-name="{{ p.name }}">Restore</button>
+            </div>
+          {% endfor %}
+        {% else %}
+          <p class="removed-empty">No players have been removed.</p>
+        {% endif %}
+      </div>
+      <button id="removedModalCloseBtn">Close</button>
+    </div>
+  </div>
+
+  <script>
+    let lastRemovedName = null;
+    let undoTimeout = null;
+
+    const banner = document.getElementById("undoBanner");
+    const undoText = document.getElementById("undoText");
+    const undoBtn = document.getElementById("undoBtn");
+    const table = document.getElementById("recordsTable");
+
+    document.querySelectorAll(".remove-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const name = btn.dataset.name;
+        const res = await fetch("{{ url_for('records_hide') }}", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        const data = await res.json();
+        if (!data.ok) return;
+
+        const rowEl = document.querySelector(`tr[data-name="${CSS.escape(name)}"]`);
+        if (rowEl) rowEl.remove();
+
+        lastRemovedName = name;
+        undoText.textContent = "Removed " + name + ".";
+        banner.classList.remove("hidden");
+
+        clearTimeout(undoTimeout);
+        undoTimeout = setTimeout(() => {
+          banner.classList.add("hidden");
+        }, 6000);
+      });
+    });
+
+    undoBtn.addEventListener("click", async () => {
+      if (!lastRemovedName) return;
+      const res = await fetch("{{ url_for('records_unhide') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: lastRemovedName }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        location.reload();
+      }
+    });
+
+    // Click a day (weekly card or calendar date) to see who played that day
+    const dayModal = document.getElementById("dayModal");
+    const dayModalTitle = document.getElementById("dayModalTitle");
+    const dayModalList = document.getElementById("dayModalList");
+    const dayModalCloseBtn = document.getElementById("dayModalCloseBtn");
+
+    async function openDayModal(dateIso, label) {
+      dayModalTitle.textContent = label;
+      dayModalList.innerHTML = "<p class='day-modal-loading'>Loading...</p>";
+      dayModal.classList.remove("hidden");
+
+      try {
+        const res = await fetch(`/records/day?date=${encodeURIComponent(dateIso)}`);
+        const data = await res.json();
+
+        if (!data.matches || data.matches.length === 0) {
+          dayModalList.innerHTML = "<p class='day-modal-empty'>No games were played this day.</p>";
+          return;
+        }
+
+        dayModalList.innerHTML = data.matches
+          .map((m) => {
+            const result = m.is_draw ? "🤝 Draw" : `🏆 ${m.winner} won`;
+            return `
+              <div class="day-modal-match">
+                <div class="day-modal-players">${m.player1} vs ${m.player2}</div>
+                <div class="day-modal-result">${result}</div>
+                <div class="day-modal-time">${m.time}</div>
+              </div>
+            `;
+          })
+          .join("");
+      } catch (err) {
+        dayModalList.innerHTML = "<p class='day-modal-empty'>Couldn't load this day.</p>";
+      }
+    }
+
+    document.querySelectorAll("[data-date]").forEach((el) => {
+      el.addEventListener("click", () => {
+        openDayModal(el.dataset.date, el.dataset.label);
+      });
+    });
+
+    dayModalCloseBtn.addEventListener("click", () => {
+      dayModal.classList.add("hidden");
+    });
+
+    dayModal.addEventListener("click", (e) => {
+      if (e.target === dayModal) dayModal.classList.add("hidden");
+    });
+
+    // Print button — prints whichever period tab is currently open
+    document.getElementById("printBtn").addEventListener("click", () => {
+      window.print();
+    });
+
+    // Removed Players modal
+    const removedModal = document.getElementById("removedModal");
+    const openRemovedBtn = document.getElementById("openRemovedBtn");
+    const removedModalCloseBtn = document.getElementById("removedModalCloseBtn");
+
+    openRemovedBtn.addEventListener("click", () => {
+      removedModal.classList.remove("hidden");
+    });
+
+    removedModalCloseBtn.addEventListener("click", () => {
+      removedModal.classList.add("hidden");
+    });
+
+    removedModal.addEventListener("click", (e) => {
+      if (e.target === removedModal) removedModal.classList.add("hidden");
+    });
+
+    document.querySelectorAll(".restore-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.name;
+        const res = await fetch("{{ url_for('records_unhide') }}", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          location.reload();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

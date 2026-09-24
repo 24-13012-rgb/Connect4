@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Connect Four - Join Game</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="wrapper">
+    <h1>Connect Four 🎉</h1>
+
+    {% if error == "not_found" %}
+      <p class="subtitle">This game link isn't active anymore (or the code was mistyped).</p>
+      <a href="{{ url_for('create_game_route') }}" class="action-btn purple-btn">Start a New Game</a>
+
+    {% elif error == "full" %}
+      <p class="subtitle">This game already has two players.</p>
+      <a href="{{ url_for('create_game_route') }}" class="action-btn purple-btn">Start Your Own Game</a>
+
+    {% else %}
+      <p class="subtitle">{{ host_name }} is waiting for you! Enter your name to join.</p>
+
+      <form action="{{ url_for('join_game', room_id=room_id) }}" method="POST" class="name-form">
+        <div class="name-field">
+          <label for="player2">Your name</label>
+          <div class="name-color-row">
+            <input type="text" id="player2" name="player2" maxlength="20" placeholder="e.g. Jordan" required autofocus>
+            <input type="color" id="color2" name="color2" value="#eab308" class="color-swatch" title="Your color">
+          </div>
+        </div>
+        <button type="submit" class="start-btn">Join Game 🚀</button>
+      </form>
+    {% endif %}
+  </div>
+</body>
+</html>
