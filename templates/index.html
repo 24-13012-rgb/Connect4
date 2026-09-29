@@ -35,6 +35,9 @@
         </div>
         <button id="newRoundBtn" class="action-btn blue-btn">🔄 New Round</button>
         <a href="{{ url_for('new_players') }}" class="action-btn purple-btn">👋 New Players</a>
+        {% if player_num == 1 %}
+        <a href="{{ url_for('records') }}" class="action-btn gold-btn">🔒 View Records</a>
+        {% endif %}
       </div>
 
       <div class="board-panel">

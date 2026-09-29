@@ -33,7 +33,7 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 14px;
-  width: 150px;
+  width: 170px;
 }
 
 .side-panel .score {
@@ -144,20 +144,20 @@ h1 {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(7, 92px);
-  grid-template-rows: repeat(6, 92px);
-  gap: 12px;
+  grid-template-columns: repeat(7, 118px);
+  grid-template-rows: repeat(6, 118px);
+  gap: 14px;
   background: #3b82f6;
-  padding: 20px;
-  border-radius: 30px;
+  padding: 24px;
+  border-radius: 32px;
   box-shadow: 0 10px 0 #1d4ed8, 0 18px 36px rgba(0,0,0,0.28);
   margin: 0 auto;
-  border: 6px solid #60a5fa;
+  border: 8px solid #60a5fa;
 }
 
 .cell {
-  width: 92px;
-  height: 92px;
+  width: 118px;
+  height: 118px;
   cursor: pointer;
   position: relative;
 }
@@ -192,7 +192,7 @@ h1 {
    animation (instead of two chained together) is what guarantees it can
    never double-bounce — there's only ever one animation running. */
 @keyframes dropLand {
-  0%   { transform: translateY(-500px) scaleY(1) scaleX(1); animation-timing-function: cubic-bezier(.55,.06,.68,.19); }
+  0%   { transform: translateY(-640px) scaleY(1) scaleX(1); animation-timing-function: cubic-bezier(.55,.06,.68,.19); }
   55%  { transform: translateY(0) scaleY(1) scaleX(1); animation-timing-function: ease-out; }
   68%  { transform: translateY(0) scaleY(0.82) scaleX(1.14); animation-timing-function: ease-out; }
   82%  { transform: translateY(0) scaleY(1.05) scaleX(0.96); animation-timing-function: ease-in-out; }
