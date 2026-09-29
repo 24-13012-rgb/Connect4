@@ -18,6 +18,66 @@ body {
   text-align: center;
 }
 
+/* ---------- Side-by-side game layout: score + controls flank the board ---------- */
+
+.game-layout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+.side-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 150px;
+}
+
+.side-panel .score {
+  width: 100%;
+  padding: 16px 10px;
+}
+
+.side-panel .score .value {
+  font-size: 2.4rem;
+}
+
+.side-panel .action-btn,
+.side-panel button {
+  width: 100%;
+}
+
+.board-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.board-panel .status {
+  margin-bottom: 14px;
+}
+
+@media (max-width: 900px) {
+  .game-layout {
+    flex-direction: column;
+  }
+  .side-panel {
+    flex-direction: row;
+    width: auto;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .side-panel .score,
+  .side-panel .action-btn,
+  .side-panel button {
+    width: auto;
+    min-width: 130px;
+  }
+}
+
 h1 {
   margin-bottom: 6px;
   font-size: 2.4rem;
@@ -84,20 +144,20 @@ h1 {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(7, 76px);
-  grid-template-rows: repeat(6, 76px);
-  gap: 10px;
+  grid-template-columns: repeat(7, 92px);
+  grid-template-rows: repeat(6, 92px);
+  gap: 12px;
   background: #3b82f6;
-  padding: 18px;
-  border-radius: 28px;
+  padding: 20px;
+  border-radius: 30px;
   box-shadow: 0 10px 0 #1d4ed8, 0 18px 36px rgba(0,0,0,0.28);
   margin: 0 auto;
   border: 6px solid #60a5fa;
 }
 
 .cell {
-  width: 76px;
-  height: 76px;
+  width: 92px;
+  height: 92px;
   cursor: pointer;
   position: relative;
 }
@@ -132,7 +192,7 @@ h1 {
    animation (instead of two chained together) is what guarantees it can
    never double-bounce — there's only ever one animation running. */
 @keyframes dropLand {
-  0%   { transform: translateY(-420px) scaleY(1) scaleX(1); animation-timing-function: cubic-bezier(.55,.06,.68,.19); }
+  0%   { transform: translateY(-500px) scaleY(1) scaleX(1); animation-timing-function: cubic-bezier(.55,.06,.68,.19); }
   55%  { transform: translateY(0) scaleY(1) scaleX(1); animation-timing-function: ease-out; }
   68%  { transform: translateY(0) scaleY(0.82) scaleX(1.14); animation-timing-function: ease-out; }
   82%  { transform: translateY(0) scaleY(1.05) scaleX(0.96); animation-timing-function: ease-in-out; }

@@ -8,6 +8,7 @@
 <body>
   <div class="wrapper">
     <h1>🏆 Records 🏆</h1>
+    <p style="margin: -6px 0 14px;"><a href="{{ url_for('records_logout') }}" style="font-size:0.8rem; color:#64748b;">Log out</a></p>
 
     <div class="tabs">
       <a href="{{ url_for('records', period='daily') }}" class="tab {{ 'active' if period == 'daily' }}">Daily</a>

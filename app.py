@@ -7,6 +7,7 @@ import random
 import string
 import time
 from datetime import datetime, timedelta
+from functools import wraps
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
@@ -17,6 +18,11 @@ app.secret_key = os.environ.get("SECRET_KEY", "connect4-booth-secret")  # overri
 # tells Flask to trust the proxy's X-Forwarded-* headers so url_for(...,
 # _external=True) builds correct https:// join links instead of http://.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+# Password that unlocks the records/leaderboard page (set ADMIN_PASSWORD in
+# your hosting platform's Environment settings; this fallback is only for
+# local testing).
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "connect4admin")
 
 ROWS = 6
 COLS = 7
@@ -477,6 +483,15 @@ def is_draw(board):
 
 # ---------- Routes ----------
 
+def require_admin(view_func):
+    @wraps(view_func)
+    def wrapped(*args, **kwargs):
+        if not session.get("is_admin"):
+            return redirect(url_for("records_login", next=request.path))
+        return view_func(*args, **kwargs)
+    return wrapped
+
+
 @app.route("/")
 def home():
     room_id = session.get("room_id")
@@ -673,6 +688,7 @@ def new_players():
 
 
 @app.route("/records")
+@require_admin
 def records():
     period = request.args.get("period", "daily")
     if period not in ("daily", "weekly", "monthly", "alltime"):
@@ -701,6 +717,7 @@ def records():
 
 
 @app.route("/records/day")
+@require_admin
 def records_day():
     date_str = request.args.get("date", "")
     try:
@@ -711,6 +728,7 @@ def records_day():
 
 
 @app.route("/records/hide", methods=["POST"])
+@require_admin
 def records_hide():
     name = (request.json or {}).get("name", "").strip()
     if not name:
@@ -720,12 +738,32 @@ def records_hide():
 
 
 @app.route("/records/unhide", methods=["POST"])
+@require_admin
 def records_unhide():
     name = (request.json or {}).get("name", "").strip()
     if not name:
         return jsonify(error="Missing name"), 400
     unhide_player(name)
     return jsonify(ok=True, name=name)
+
+
+@app.route("/records/login", methods=["GET", "POST"])
+def records_login():
+    error = None
+    if request.method == "POST":
+        entered = request.form.get("password", "")
+        if entered == ADMIN_PASSWORD:
+            session["is_admin"] = True
+            next_url = request.args.get("next") or url_for("records")
+            return redirect(next_url)
+        error = "Wrong password."
+    return render_template("records_login.html", error=error)
+
+
+@app.route("/records/logout")
+def records_logout():
+    session.pop("is_admin", None)
+    return redirect(url_for("records_login"))
 
 
 if __name__ == "__main__":

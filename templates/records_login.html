@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Connect Four - Records Login</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="wrapper">
+    <h1>🏆 Records</h1>
+    <p class="subtitle">This page is private. Enter the admin password to view it.</p>
+
+    {% if error %}
+    <p class="subtitle" style="color:#dc2626; font-weight:bold;">{{ error }}</p>
+    {% endif %}
+
+    <form method="POST" class="name-form">
+      <div class="name-field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required autofocus style="padding:10px 12px; border-radius:12px; border:2px solid #cbd5e1; width:100%;">
+      </div>
+      <button type="submit" class="start-btn">Unlock 🔓</button>
+    </form>
+  </div>
+</body>
+</html>

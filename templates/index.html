@@ -27,42 +27,44 @@
     </div>
     {% endif %}
 
-    <div class="scoreboard">
-      <div class="score" style="--score-color: {{ player1_color }}; --score-dark: {{ player1_color_dark }};">
-        <span class="label">{{ player1_name }}</span>
-        <span id="score1" class="value">{{ scores["1"] }}</span>
+    <div class="game-layout">
+      <div class="side-panel side-panel-left">
+        <div class="score" style="--score-color: {{ player1_color }}; --score-dark: {{ player1_color_dark }};">
+          <span class="label">{{ player1_name }}</span>
+          <span id="score1" class="value">{{ scores["1"] }}</span>
+        </div>
+        <button id="newRoundBtn" class="action-btn blue-btn">🔄 New Round</button>
+        <a href="{{ url_for('new_players') }}" class="action-btn purple-btn">👋 New Players</a>
       </div>
-      <div id="status" class="status">{{ player1_name }}'s Turn</div>
-      <div class="score" style="--score-color: {{ player2_color }}; --score-dark: {{ player2_color_dark }};">
-        <span class="label">{{ player2_name }}</span>
-        <span id="score2" class="value">{{ scores["2"] }}</span>
+
+      <div class="board-panel">
+        <div id="status" class="status">{{ player1_name }}'s Turn</div>
+
+        <div id="board" class="board{% if not player2_joined %} board-disabled{% endif %}">
+          {% for r in range(6) %}
+            {% for c in range(7) %}
+              <div class="cell" data-row="{{ r }}" data-col="{{ c }}">
+                <div class="piece empty" id="cell-{{ r }}-{{ c }}"></div>
+              </div>
+            {% endfor %}
+          {% endfor %}
+        </div>
+
+        <div class="key-guide">
+          {% for k in ['Q', 'W', 'E', 'R', 'T', 'Y', 'U'] %}
+            <div class="key-cap">{{ k }}</div>
+          {% endfor %}
+        </div>
+        <p class="key-hint">Click a column, or press a key above it</p>
       </div>
-    </div>
 
-    <div id="board" class="board{% if not player2_joined %} board-disabled{% endif %}">
-      {% for r in range(6) %}
-        {% for c in range(7) %}
-          <div class="cell" data-row="{{ r }}" data-col="{{ c }}">
-            <div class="piece empty" id="cell-{{ r }}-{{ c }}"></div>
-          </div>
-        {% endfor %}
-      {% endfor %}
-    </div>
-
-    <div class="key-guide">
-      {% for k in ['Q', 'W', 'E', 'R', 'T', 'Y', 'U'] %}
-        <div class="key-cap">{{ k }}</div>
-      {% endfor %}
-    </div>
-    <p class="key-hint">Click a column, or press a key above it</p>
-
-    <div class="controls">
-      <button id="newRoundBtn" class="action-btn blue-btn">🔄 New Round</button>
-      <button id="resetScoresBtn" class="action-btn red-btn">🧹 Reset Scores</button>
-    </div>
-    <div class="controls" style="margin-top: 12px;">
-      <a href="{{ url_for('new_players') }}" class="action-btn purple-btn">👋 New Players</a>
-      <a href="{{ url_for('records') }}" class="action-btn gold-btn">🏆 View Records</a>
+      <div class="side-panel side-panel-right">
+        <div class="score" style="--score-color: {{ player2_color }}; --score-dark: {{ player2_color_dark }};">
+          <span class="label">{{ player2_name }}</span>
+          <span id="score2" class="value">{{ scores["2"] }}</span>
+        </div>
+        <button id="resetScoresBtn" class="action-btn red-btn">🧹 Reset Scores</button>
+      </div>
     </div>
   </div>
 
