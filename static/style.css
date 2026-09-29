@@ -614,10 +614,15 @@ button:active {
   display: flex;
   align-items: center;
   justify-content: center;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.22s ease, visibility 0.22s ease;
 }
 
 .modal.hidden {
-  display: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .modal-content {
@@ -627,6 +632,16 @@ button:active {
   text-align: center;
   box-shadow: 0 10px 40px rgba(0,0,0,0.3);
   border: 5px solid #fbbf24;
+  transform: scale(1);
+  transition: transform 0.22s ease;
+}
+
+.modal.hidden .modal-content {
+  transform: scale(0.88);
+}
+
+#joinLinkModal .modal-content {
+  max-width: 420px;
 }
 
 .modal-content h2 {
@@ -1060,6 +1075,29 @@ button:active {
   margin-left: auto;
   margin-right: auto;
   box-shadow: 0 4px 0 #cbd5e1;
+}
+
+.waiting-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  background: #ffffff;
+  border-radius: 999px;
+  padding: 10px 10px 10px 20px;
+  margin: 0 0 18px;
+  box-shadow: 0 4px 0 #cbd5e1;
+}
+
+.waiting-bar-text {
+  font-weight: bold;
+  color: #7c3aed;
+  font-size: 0.9rem;
+}
+
+.waiting-bar .action-btn {
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 0.85rem;
 }
 
 .link-hint {

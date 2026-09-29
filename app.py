@@ -1,4 +1,4 @@
-from flask import Flask, render_template, session, jsonify, request, redirect, url_for
+from flask import Flask, render_template, session, jsonify, request, redirect, url_for, Response
 import sqlite3
 import os
 import re
@@ -6,6 +6,7 @@ import calendar
 import random
 import string
 import time
+import json
 from datetime import datetime, timedelta
 from functools import wraps
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -95,7 +96,7 @@ def game_state_json(game):
 # Bump this any time static/script.js or static/style.css change.
 # It's appended as a query string on those files, which forces browsers
 # to fetch the new version instead of serving a stale cached copy.
-ASSET_VERSION = "11"
+ASSET_VERSION = "12"
 
 DEFAULT_COLOR_1 = "#ef4444"  # red
 DEFAULT_COLOR_2 = "#eab308"  # yellow
@@ -496,6 +497,40 @@ def check_winner(board, row, col, player):
 
 def is_draw(board):
     return all(board[0][c] != 0 for c in range(COLS))
+
+
+# ---------- PWA: manifest + service worker ----------
+
+@app.route("/manifest.json")
+def web_manifest():
+    manifest = {
+        "name": "Connect Four",
+        "short_name": "Connect4",
+        "description": "Play Connect Four with a friend on another device, anywhere.",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#bae6fd",
+        "theme_color": "#3b82f6",
+        "orientation": "portrait",
+        "icons": [
+            {"src": url_for("static", filename="icons/icon-192.png"), "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": url_for("static", filename="icons/icon-192-maskable.png"), "sizes": "192x192", "type": "image/png", "purpose": "maskable"},
+            {"src": url_for("static", filename="icons/icon-512.png"), "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": url_for("static", filename="icons/icon-512-maskable.png"), "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        ],
+    }
+    return Response(json.dumps(manifest), mimetype="application/manifest+json")
+
+
+@app.route("/sw.js")
+def service_worker():
+    # Served from the root (not /static/sw.js) so its scope covers the whole
+    # site instead of just the static folder.
+    resp = app.send_static_file("sw.js")
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
 
 
 # ---------- Routes ----------

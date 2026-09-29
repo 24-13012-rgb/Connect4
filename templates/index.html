@@ -2,8 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Connect Four - IT Booth</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="manifest" href="{{ url_for('web_manifest') }}">
+<meta name="theme-color" content="#3b82f6">
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png') }}">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Connect4">
 </head>
 <body>
 
@@ -16,14 +23,9 @@
     </div>
 
     {% if not player2_joined %}
-    <div id="waitingPanel" class="waiting-panel">
-      <p class="subtitle">Waiting for an opponent to join…</p>
-      <p class="link-hint">Send this link to whoever you're playing:</p>
-      <div class="link-box">
-        <input type="text" id="joinLinkInput" value="{{ join_url }}" readonly>
-        <button id="copyLinkBtn" type="button" class="action-btn blue-btn">📋 Copy</button>
-      </div>
-      <p class="link-hint small">Both devices need to be on the same Wi‑Fi/network as this computer. If the link uses "localhost", replace that part with this computer's network address instead (see the "Show Network Address" helper).</p>
+    <div id="waitingBar" class="waiting-bar">
+      <span class="waiting-bar-text">⏳ Waiting for an opponent…</span>
+      <button id="openJoinLinkBtn" type="button" class="action-btn blue-btn">🔗 Share Join Link</button>
     </div>
     {% endif %}
 
@@ -71,6 +73,21 @@
     </div>
   </div>
 
+  {% if not player2_joined %}
+  <div id="joinLinkModal" class="modal hidden">
+    <div class="modal-content">
+      <h2>🔗 Share This Link</h2>
+      <p class="link-hint">Send this link to whoever you're playing:</p>
+      <div class="link-box">
+        <input type="text" id="joinLinkInput" value="{{ join_url }}" readonly>
+        <button id="copyLinkBtn" type="button" class="action-btn blue-btn">📋 Copy</button>
+      </div>
+      <p class="link-hint small">Both devices need to be on the same Wi‑Fi/network as this computer. If the link uses "localhost", replace that part with this computer's network address instead (see the "Show Network Address" helper).</p>
+      <button id="closeJoinLinkBtn" type="button" class="action-btn purple-btn" style="margin-top:14px;">Close</button>
+    </div>
+  </div>
+  {% endif %}
+
   <div id="winModal" class="modal hidden">
     <div class="modal-content">
       <h2 id="winText">Winner!</h2>
@@ -93,5 +110,10 @@
     const INITIAL_BOARD = {{ board|tojson }};
   </script>
   <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+    }
+  </script>
 </body>
 </html>

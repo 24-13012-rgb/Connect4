@@ -48,6 +48,33 @@ if (!opponentJoined && typeof ROOM_ID !== "undefined") {
   }, 1500);
 }
 
+// The join link lives in a modal instead of an always-visible panel, so it
+// doesn't push the board down. It opens automatically once so the host
+// doesn't miss it, and can be reopened any time via the "Share Join Link"
+// button.
+const joinLinkModal = document.getElementById("joinLinkModal");
+const openJoinLinkBtn = document.getElementById("openJoinLinkBtn");
+const closeJoinLinkBtn = document.getElementById("closeJoinLinkBtn");
+
+if (joinLinkModal) {
+  joinLinkModal.classList.remove("hidden");
+
+  if (openJoinLinkBtn) {
+    openJoinLinkBtn.addEventListener("click", () => {
+      joinLinkModal.classList.remove("hidden");
+    });
+  }
+  if (closeJoinLinkBtn) {
+    closeJoinLinkBtn.addEventListener("click", () => {
+      joinLinkModal.classList.add("hidden");
+    });
+  }
+  // Clicking the dimmed backdrop (not the card itself) also closes it.
+  joinLinkModal.addEventListener("click", (e) => {
+    if (e.target === joinLinkModal) joinLinkModal.classList.add("hidden");
+  });
+}
+
 // Keep track of the last board we painted so we only touch cells that
 // actually changed value — this is what stops every piece on the board
 // from re-triggering the drop/bounce animation on every single move.
@@ -127,8 +154,12 @@ function renderBoard(state) {
   if (typeof state.player2_joined === "boolean" && state.player2_joined !== opponentJoined) {
     opponentJoined = state.player2_joined;
     board.classList.toggle("board-disabled", !opponentJoined);
-    const waitingPanel = document.getElementById("waitingPanel");
-    if (opponentJoined && waitingPanel) waitingPanel.remove();
+    if (opponentJoined) {
+      const waitingBar = document.getElementById("waitingBar");
+      if (waitingBar) waitingBar.remove();
+      const joinLinkModal = document.getElementById("joinLinkModal");
+      if (joinLinkModal) joinLinkModal.remove();
+    }
   }
 
   updateStatus(state.turn, state.winner);
