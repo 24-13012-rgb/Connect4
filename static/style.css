@@ -2,6 +2,10 @@
   box-sizing: border-box;
 }
 
+html, body {
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -143,22 +147,40 @@ h1 {
   50% { transform: translateY(-4px); }
 }
 
+.board-panel {
+  /* Every size below is derived from these two variables, so the board,
+     the key-cap row above it, and the internal padding/border always stay
+     perfectly aligned at any screen width — from a small phone to a
+     desktop monitor — instead of being separate fixed pixel values that
+     only matched each other at one specific size. */
+  --board-width: min(94vw, 660px);
+  --board-pad: clamp(8px, 2.5vw, 20px);
+  --board-border: clamp(3px, 1vw, 7px);
+  --board-gap: 3%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
 .board {
   display: grid;
-  grid-template-columns: repeat(7, 118px);
-  grid-template-rows: repeat(6, 118px);
-  gap: 14px;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(6, 1fr);
+  gap: var(--board-gap);
+  width: var(--board-width);
+  aspect-ratio: 7 / 6;
   background: #3b82f6;
-  padding: 24px;
-  border-radius: 32px;
+  padding: var(--board-pad);
+  border-radius: clamp(14px, 4vw, 28px);
   box-shadow: 0 10px 0 #1d4ed8, 0 18px 36px rgba(0,0,0,0.28);
   margin: 0 auto;
-  border: 8px solid #60a5fa;
+  border: var(--board-border) solid #60a5fa;
+  box-sizing: border-box;
 }
 
 .cell {
-  width: 118px;
-  height: 118px;
+  width: 100%;
+  height: 100%;
   cursor: pointer;
   position: relative;
 }
@@ -1025,11 +1047,13 @@ button:active {
 /* Keyboard key guide under the board — aligned to the 7 columns */
 .key-guide {
   display: grid;
-  grid-template-columns: repeat(7, 76px);
-  gap: 10px;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--board-gap);
+  width: var(--board-width);
+  padding: 0 calc(var(--board-pad) + var(--board-border));
+  box-sizing: border-box;
   justify-content: center;
   margin: 12px auto 0;
-  padding: 0 18px;
 }
 
 .key-cap {
@@ -1039,8 +1063,8 @@ button:active {
   border-radius: 10px;
   color: #6d28d9;
   font-weight: bold;
-  font-size: 0.95rem;
-  padding: 6px 0;
+  font-size: clamp(0.65rem, 2.6vw, 0.95rem);
+  padding: clamp(3px, 1vw, 6px) 0;
   text-align: center;
 }
 
@@ -1057,13 +1081,15 @@ button:active {
 
 .you-badge {
   display: inline-block;
-  margin: 0 0 14px;
+  margin: 0 auto 14px;
   padding: 6px 16px;
   border-radius: 999px;
   background: #ffffff;
   border: 3px solid var(--score-color, #fbbf24);
   font-size: 0.95rem;
   color: #334155;
+  max-width: 92vw;
+  box-sizing: border-box;
 }
 
 .waiting-panel {
@@ -1078,14 +1104,19 @@ button:active {
 }
 
 .waiting-bar {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
   background: #ffffff;
-  border-radius: 999px;
-  padding: 10px 10px 10px 20px;
-  margin: 0 0 18px;
+  border-radius: 22px;
+  padding: 10px 16px;
+  margin: 0 auto 18px;
   box-shadow: 0 4px 0 #cbd5e1;
+  max-width: 92vw;
+  width: fit-content;
+  box-sizing: border-box;
 }
 
 .waiting-bar-text {
