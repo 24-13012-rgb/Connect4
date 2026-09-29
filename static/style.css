@@ -22,7 +22,7 @@ body {
 
 .game-layout {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   gap: 28px;
   flex-wrap: wrap;
@@ -34,6 +34,7 @@ body {
   align-items: center;
   gap: 14px;
   width: 170px;
+  margin-top: 40px; /* aligns the score card with the top of the board, not the status line above it */
 }
 
 .side-panel .score {
@@ -1091,4 +1092,101 @@ button:active {
 .board-disabled {
   opacity: 0.5;
   pointer-events: none;
+}
+
+/* ---------- Color palette picker ---------- */
+
+.palette {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  max-width: 320px;
+  margin: 4px auto 0;
+}
+
+.swatch-option {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: block;
+}
+
+.swatch-option input[type="radio"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.swatch-dot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--swatch-color);
+  border: 3px solid #ffffff;
+  box-shadow: 0 0 0 2px #cbd5e1, inset 0 -3px 0 rgba(0,0,0,0.15);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.swatch-option input:checked + .swatch-dot {
+  box-shadow: 0 0 0 3px #1e293b;
+  transform: scale(1.12);
+}
+
+.swatch-option input:focus-visible + .swatch-dot {
+  outline: 3px solid #6366f1;
+  outline-offset: 2px;
+}
+
+.swatch-option:not(.swatch-taken):hover .swatch-dot {
+  transform: scale(1.08);
+}
+
+.swatch-taken {
+  cursor: not-allowed;
+}
+
+.swatch-taken .swatch-dot {
+  opacity: 0.25;
+  filter: grayscale(70%);
+}
+
+.swatch-taken::after {
+  content: "✕";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: #1e293b;
+  pointer-events: none;
+}
+
+.field-errors {
+  max-width: 360px;
+  margin: 0 auto 14px;
+  padding: 10px 16px;
+  background: #fee2e2;
+  border: 2px solid #fca5a5;
+  border-radius: 14px;
+  color: #b91c1c;
+  font-size: 0.85rem;
+  text-align: left;
+  list-style: none;
+}
+
+.field-errors li {
+  margin: 3px 0;
+}
+
+.field-errors li::before {
+  content: "⚠️ ";
 }

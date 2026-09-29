@@ -100,6 +100,23 @@ ASSET_VERSION = "11"
 DEFAULT_COLOR_1 = "#ef4444"  # red
 DEFAULT_COLOR_2 = "#eab308"  # yellow
 
+# Fixed, friendly palette so players pick a color instead of using a raw
+# color-wheel picker. Whoever joins second has any color already taken by
+# the other player disabled (see join_game()).
+COLOR_PALETTE = [
+    {"hex": "#ef4444", "name": "Red"},
+    {"hex": "#f97316", "name": "Orange"},
+    {"hex": "#eab308", "name": "Yellow"},
+    {"hex": "#22c55e", "name": "Green"},
+    {"hex": "#14b8a6", "name": "Teal"},
+    {"hex": "#3b82f6", "name": "Blue"},
+    {"hex": "#6366f1", "name": "Indigo"},
+    {"hex": "#a855f7", "name": "Purple"},
+    {"hex": "#ec4899", "name": "Pink"},
+    {"hex": "#64748b", "name": "Gray"},
+]
+PALETTE_HEXES = {c["hex"].lower() for c in COLOR_PALETTE}
+
 
 @app.context_processor
 def inject_asset_version():
@@ -503,11 +520,13 @@ def home():
 @app.route("/create", methods=["GET", "POST"])
 def create_game_route():
     if request.method == "GET":
-        return render_template("create.html")
+        return render_template(
+            "create.html", palette=COLOR_PALETTE, selected_color=COLOR_PALETTE[0]["hex"]
+        )
 
     p1 = request.form.get("player1", "").strip()[:20] or "Red"
     color1 = request.form.get("color1", "").strip()
-    if not is_valid_hex_color(color1):
+    if color1.lower() not in PALETTE_HEXES:
         color1 = DEFAULT_COLOR_1
 
     room_id = create_game(p1, color1)
@@ -533,18 +552,56 @@ def join_game(room_id):
     if game["player2_joined"]:
         return render_template("join.html", room_id=room_id, error="full"), 409
 
+    taken_color = game["player1_color"]
+    taken_name = game["player1_name"]
+    default_color = next(
+        (c["hex"] for c in COLOR_PALETTE if c["hex"].lower() != taken_color.lower()),
+        COLOR_PALETTE[0]["hex"],
+    )
+
     if request.method == "GET":
         return render_template(
-            "join.html", room_id=room_id, host_name=game["player1_name"], error=None
+            "join.html",
+            room_id=room_id,
+            host_name=taken_name,
+            error=None,
+            palette=COLOR_PALETTE,
+            taken_color=taken_color,
+            taken_name=taken_name,
+            selected_color=default_color,
+            entered_name="",
         )
 
-    p2 = request.form.get("player2", "").strip()[:20] or "Yellow"
+    p2 = request.form.get("player2", "").strip()[:20]
     color2 = request.form.get("color2", "").strip()
-    if not is_valid_hex_color(color2):
-        color2 = DEFAULT_COLOR_2
-    # Nudge player 2's color away from an accidental exact match with player 1.
-    if color2.lower() == game["player1_color"].lower():
-        color2 = DEFAULT_COLOR_2 if color2.lower() != DEFAULT_COLOR_2 else DEFAULT_COLOR_1
+
+    field_errors = []
+    if not p2:
+        field_errors.append("Please enter your name.")
+    elif p2.lower() == taken_name.strip().lower():
+        field_errors.append(
+            f'The name "{taken_name}" is already taken by the other player — pick a different name.'
+        )
+
+    if color2.lower() not in PALETTE_HEXES:
+        field_errors.append("Please pick one of the colors below.")
+        color2 = default_color
+    elif color2.lower() == taken_color.lower():
+        field_errors.append(f"{taken_name} already chose that color — pick another one.")
+
+    if field_errors:
+        return render_template(
+            "join.html",
+            room_id=room_id,
+            host_name=taken_name,
+            error=None,
+            palette=COLOR_PALETTE,
+            taken_color=taken_color,
+            taken_name=taken_name,
+            selected_color=color2,
+            entered_name=p2,
+            field_errors=field_errors,
+        )
 
     game["player2_name"] = p2
     game["player2_color"] = color2

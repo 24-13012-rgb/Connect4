@@ -13,11 +13,21 @@
     <form action="{{ url_for('create_game_route') }}" method="POST" class="name-form">
       <div class="name-field">
         <label for="player1">Your name</label>
-        <div class="name-color-row">
-          <input type="text" id="player1" name="player1" maxlength="20" placeholder="e.g. Alex" required autofocus>
-          <input type="color" id="color1" name="color1" value="#ef4444" class="color-swatch" title="Your color">
+        <input type="text" id="player1" name="player1" maxlength="20" placeholder="e.g. Alex" required autofocus>
+      </div>
+
+      <div class="name-field">
+        <label>Your color</label>
+        <div class="palette" role="radiogroup" aria-label="Choose your color">
+          {% for c in palette %}
+          <label class="swatch-option" style="--swatch-color: {{ c.hex }};" title="{{ c.name }}">
+            <input type="radio" name="color1" value="{{ c.hex }}" {% if c.hex == selected_color %}checked{% endif %}>
+            <span class="swatch-dot"></span>
+          </label>
+          {% endfor %}
         </div>
       </div>
+
       <button type="submit" class="start-btn">Create Game 🚀</button>
     </form>
   </div>

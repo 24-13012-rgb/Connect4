@@ -20,14 +20,34 @@
     {% else %}
       <p class="subtitle">{{ host_name }} is waiting for you! Enter your name to join.</p>
 
+      {% if field_errors %}
+      <ul class="field-errors">
+        {% for msg in field_errors %}
+        <li>{{ msg }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+
       <form action="{{ url_for('join_game', room_id=room_id) }}" method="POST" class="name-form">
         <div class="name-field">
           <label for="player2">Your name</label>
-          <div class="name-color-row">
-            <input type="text" id="player2" name="player2" maxlength="20" placeholder="e.g. Jordan" required autofocus>
-            <input type="color" id="color2" name="color2" value="#eab308" class="color-swatch" title="Your color">
+          <input type="text" id="player2" name="player2" maxlength="20" placeholder="e.g. Jordan" value="{{ entered_name }}" required autofocus>
+          <p class="link-hint small" style="margin-top:4px;">"{{ taken_name }}" is already taken.</p>
+        </div>
+
+        <div class="name-field">
+          <label>Your color</label>
+          <div class="palette" role="radiogroup" aria-label="Choose your color">
+            {% for c in palette %}
+            {% set is_taken = c.hex.lower() == taken_color.lower() %}
+            <label class="swatch-option{% if is_taken %} swatch-taken{% endif %}" style="--swatch-color: {{ c.hex }};" title="{{ c.name }}{% if is_taken %} (already taken){% endif %}">
+              <input type="radio" name="color2" value="{{ c.hex }}" {% if c.hex == selected_color %}checked{% endif %} {% if is_taken %}disabled{% endif %}>
+              <span class="swatch-dot"></span>
+            </label>
+            {% endfor %}
           </div>
         </div>
+
         <button type="submit" class="start-btn">Join Game 🚀</button>
       </form>
     {% endif %}
