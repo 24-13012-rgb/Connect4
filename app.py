@@ -7,9 +7,12 @@ import random
 import string
 import time
 import json
+import io
 from datetime import datetime, timedelta
 from functools import wraps
 from werkzeug.middleware.proxy_fix import ProxyFix
+import qrcode
+import qrcode.image.svg
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "connect4-booth-secret")  # override via env var when deployed publicly
@@ -28,6 +31,39 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "connect4admin")
 ROWS = 6
 COLS = 7
 DB_PATH = os.path.join(os.path.dirname(__file__), "records.db")
+
+# Records normally live in a local SQLite file, which works great except for
+# one thing: on free hosting (Render, etc.) that file lives on ephemeral
+# storage and gets wiped every time the app is redeployed. Setting a
+# DATABASE_URL environment variable (e.g. a free Postgres database from
+# Neon/Supabase) switches records over to that instead, so they survive
+# redeploys indefinitely. Nothing else about the app changes either way.
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+USE_POSTGRES = bool(DATABASE_URL)
+
+if USE_POSTGRES:
+    import psycopg2
+    import psycopg2.extras
+
+
+class _PostgresConn:
+    """Thin wrapper so the rest of the file can keep using the same
+    sqlite3-style calling convention (conn.execute(...).fetchall(), etc.)
+    regardless of which database is actually in use."""
+
+    def __init__(self, dsn):
+        self._conn = psycopg2.connect(dsn, cursor_factory=psycopg2.extras.RealDictCursor)
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor()
+        cur.execute(sql.replace("?", "%s"), params)
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._conn.close()
 
 # ---------- Shared game rooms ----------
 # Games used to live entirely in the per-browser session, which meant two
@@ -63,6 +99,7 @@ def create_game(player1_name, player1_color):
         "player2_color": None,
         "player2_joined": False,
         "last_move": None,
+        "winning_cells": None,
         "created_at": time.time(),
     }
     return code
@@ -91,6 +128,7 @@ def game_state_json(game):
         "row": last_move.get("row"),
         "col": last_move.get("col"),
         "move_id": last_move.get("move_id", 0),
+        "winning_cells": game.get("winning_cells"),
     }
 
 # Bump this any time static/script.js or static/style.css change.
@@ -128,6 +166,31 @@ def is_valid_hex_color(value):
     return bool(re.fullmatch(r"#[0-9a-fA-F]{6}", value or ""))
 
 
+def generate_qr_svg(data):
+    """Renders a scannable QR code for `data` as a small, self-contained
+    inline SVG string (no external image file, no JS library) with a white
+    background added for reliable scanning against the page's background."""
+    img = qrcode.make(data, image_factory=qrcode.image.svg.SvgPathImage, box_size=10, border=2)
+    buf = io.BytesIO()
+    img.save(buf)
+    raw = buf.getvalue().decode("utf-8")
+
+    viewbox_match = re.search(r'viewBox="([^"]+)"', raw)
+    viewbox = viewbox_match.group(1) if viewbox_match else "0 0 33 33"
+    size = viewbox.split()[-1]
+
+    path_match = re.search(r"(<path .*?/>)", raw, re.S)
+    path = path_match.group(1) if path_match else ""
+
+    return (
+        f'<svg viewBox="{viewbox}" xmlns="http://www.w3.org/2000/svg" '
+        f'role="img" aria-label="QR code to join the game">'
+        f'<rect x="0" y="0" width="{size}" height="{size}" fill="#ffffff"/>'
+        f"{path}"
+        f"</svg>"
+    )
+
+
 def shade_hex(hex_color, amount):
     """Lighten (positive amount) or darken (negative amount) a hex color."""
     hex_color = hex_color.lstrip("#")
@@ -141,6 +204,8 @@ def shade_hex(hex_color, amount):
 # ---------- Database ----------
 
 def get_db():
+    if USE_POSTGRES:
+        return _PostgresConn(DATABASE_URL)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -148,22 +213,40 @@ def get_db():
 
 def init_db():
     conn = get_db()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS matches (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            player1 TEXT NOT NULL,
-            player2 TEXT NOT NULL,
-            winner TEXT,
-            is_draw INTEGER NOT NULL DEFAULT 0,
-            played_at TEXT NOT NULL
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS hidden_players (
-            name TEXT PRIMARY KEY,
-            hidden_at TEXT NOT NULL
-        )
-    """)
+    if USE_POSTGRES:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS matches (
+                id SERIAL PRIMARY KEY,
+                player1 TEXT NOT NULL,
+                player2 TEXT NOT NULL,
+                winner TEXT,
+                is_draw INTEGER NOT NULL DEFAULT 0,
+                played_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS hidden_players (
+                name TEXT PRIMARY KEY,
+                hidden_at TEXT NOT NULL
+            )
+        """)
+    else:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS matches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                player1 TEXT NOT NULL,
+                player2 TEXT NOT NULL,
+                winner TEXT,
+                is_draw INTEGER NOT NULL DEFAULT 0,
+                played_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS hidden_players (
+                name TEXT PRIMARY KEY,
+                hidden_at TEXT NOT NULL
+            )
+        """)
     conn.commit()
     conn.close()
 
@@ -183,10 +266,17 @@ def log_match(player1, player2, winner, is_draw):
 
 def hide_player(name):
     conn = get_db()
-    conn.execute(
-        "INSERT OR REPLACE INTO hidden_players (name, hidden_at) VALUES (?, ?)",
-        (name, datetime.now().isoformat()),
-    )
+    if USE_POSTGRES:
+        conn.execute(
+            "INSERT INTO hidden_players (name, hidden_at) VALUES (?, ?) "
+            "ON CONFLICT (name) DO UPDATE SET hidden_at = EXCLUDED.hidden_at",
+            (name, datetime.now().isoformat()),
+        )
+    else:
+        conn.execute(
+            "INSERT OR REPLACE INTO hidden_players (name, hidden_at) VALUES (?, ?)",
+            (name, datetime.now().isoformat()),
+        )
     conn.commit()
     conn.close()
 
@@ -477,22 +567,25 @@ def drop_piece(board, col, player):
 
 
 def check_winner(board, row, col, player):
+    """Returns the list of (row, col) cells forming the winning line of 4+
+    (so the frontend can highlight exactly those pieces), or None if the
+    move just placed doesn't win."""
     directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
     for dr, dc in directions:
-        count = 1
+        cells = [(row, col)]
         r, c = row + dr, col + dc
         while 0 <= r < ROWS and 0 <= c < COLS and board[r][c] == player:
-            count += 1
+            cells.append((r, c))
             r += dr
             c += dc
         r, c = row - dr, col - dc
         while 0 <= r < ROWS and 0 <= c < COLS and board[r][c] == player:
-            count += 1
+            cells.append((r, c))
             r -= dr
             c -= dc
-        if count >= 4:
-            return True
-    return False
+        if len(cells) >= 4:
+            return cells
+    return None
 
 
 def is_draw(board):
@@ -669,6 +762,7 @@ def game(room_id):
         room_id=room_id,
         player_num=player_num,
         join_url=url_for("join_game", room_id=room_id, _external=True),
+        join_qr_svg=generate_qr_svg(url_for("join_game", room_id=room_id, _external=True)),
         board=game["board"],
         turn=game["turn"],
         winner=game["winner"],
@@ -725,9 +819,11 @@ def move(room_id):
     p1 = game["player1_name"]
     p2 = game["player2_name"]
 
-    if check_winner(board, row, col, turn):
+    winning_cells = check_winner(board, row, col, turn)
+    if winning_cells:
         winner = turn
         game["scores"][str(turn)] += 1
+        game["winning_cells"] = winning_cells
         winner_name = p1 if turn == 1 else p2
         log_match(p1, p2, winner_name, is_draw=False)
     elif is_draw(board):
@@ -757,6 +853,7 @@ def reset(room_id):
     game["turn"] = 1
     game["winner"] = 0
     game["last_move"] = None
+    game["winning_cells"] = None
     return jsonify(game_state_json(game))
 
 

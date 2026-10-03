@@ -78,9 +78,14 @@ if (joinLinkModal) {
 // Keep track of the last board we painted so we only touch cells that
 // actually changed value — this is what stops every piece on the board
 // from re-triggering the drop/bounce animation on every single move.
-let previousBoard = typeof INITIAL_BOARD !== "undefined"
-  ? INITIAL_BOARD.map((row) => row.slice())
-  : Array.from({ length: 6 }, () => Array(7).fill(0));
+//
+// This always starts as all-empty, even when the game already has pieces
+// on it (e.g. opening/refreshing a page mid-game) — the page itself always
+// renders every cell visually empty at first (the real board only gets
+// painted in by the first poll below), so this must start empty too, or
+// the diff against the real board would see no change and leave those
+// pieces permanently invisible until the next move.
+let previousBoard = Array.from({ length: 6 }, () => Array(7).fill(0));
 
 function colorInfoFor(player) {
   if (player === 1) return { base: PLAYER1_COLOR, light: PLAYER1_COLOR_LIGHT };
@@ -151,6 +156,23 @@ function renderBoard(state) {
 
   previousBoard = state.board.map((row) => row.slice());
 
+  // Highlight the four connected pieces that won the round. This runs
+  // separately from the diff loop above because most of those pieces were
+  // placed on earlier moves, so they won't show up as "changed" on the
+  // winning move's render -- they still need the glow added explicitly.
+  // The piece that just completed the win (state.row/state.col) is the
+  // exception: it's skipped here and highlighted later, once its drop
+  // animation actually finishes (see attachLandingHandler below), so the
+  // glow doesn't cut its falling animation short.
+  if (state.winner && state.winner !== 0 && Array.isArray(state.winning_cells)) {
+    for (const cell of state.winning_cells) {
+      const [r, c] = cell;
+      if (r === state.row && c === state.col) continue;
+      const cellEl = document.getElementById(`cell-${r}-${c}`);
+      if (cellEl) cellEl.classList.add("win");
+    }
+  }
+
   if (typeof state.player2_joined === "boolean" && state.player2_joined !== opponentJoined) {
     opponentJoined = state.player2_joined;
     board.classList.toggle("board-disabled", !opponentJoined);
@@ -180,7 +202,12 @@ function renderBoard(state) {
   ) {
     lastSeenMoveId = moveId;
     const landedColor = state.board[state.row][state.col];
-    attachLandingHandler(state.row, state.col, landedColor);
+    const isWinningDrop =
+      state.winner &&
+      state.winner !== 0 &&
+      Array.isArray(state.winning_cells) &&
+      state.winning_cells.some(([r, c]) => r === state.row && c === state.col);
+    attachLandingHandler(state.row, state.col, landedColor, isWinningDrop);
   }
 
   // Only pop the modal once per new win/draw, so repeated polling (or the
@@ -194,7 +221,7 @@ function renderBoard(state) {
   }
 }
 
-function attachLandingHandler(row, col, colorValue) {
+function attachLandingHandler(row, col, colorValue, isWinningDrop) {
   const piece = document.getElementById(`cell-${row}-${col}`);
   if (!piece) return;
 
@@ -204,6 +231,10 @@ function attachLandingHandler(row, col, colorValue) {
     if (e.animationName !== "dropLand") return;
     piece.removeEventListener("animationend", onLand);
     playLandingEffect(piece, colorValue);
+    // Add the win glow only after the fall finishes landing -- adding it
+    // earlier would switch the piece's animation to the glow's "wiggle"
+    // immediately, cutting the drop short.
+    if (isWinningDrop) piece.classList.add("win");
   };
 
   piece.addEventListener("animationend", onLand);

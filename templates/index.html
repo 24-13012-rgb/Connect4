@@ -77,7 +77,11 @@
   <div id="joinLinkModal" class="modal hidden">
     <div class="modal-content">
       <h2>🔗 Share This Link</h2>
-      <p class="link-hint">Send this link to whoever you're playing:</p>
+      <p class="link-hint">Scan to join on another phone:</p>
+      <div class="qr-box">
+        {{ join_qr_svg | safe }}
+      </div>
+      <p class="link-hint" style="margin-top:14px;">Or send this link:</p>
       <div class="link-box">
         <input type="text" id="joinLinkInput" value="{{ join_url }}" readonly>
         <button id="copyLinkBtn" type="button" class="action-btn blue-btn">📋 Copy</button>
