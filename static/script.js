@@ -215,11 +215,82 @@ function renderBoard(state) {
   if (state.winner && state.winner !== 0 && state.winner !== winModalShownForWinner) {
     winModalShownForWinner = state.winner;
     setTimeout(() => showWinModal(state.winner), 500);
+    if (state.winner !== 3 && Array.isArray(state.winning_cells)) {
+      // Same 500ms beat as the modal above, so the connecting line draws in
+      // right as the winning piece finishes landing, not mid-fall.
+      setTimeout(() => drawWinLine(state.winning_cells), 500);
+    }
   }
   if (!state.winner || state.winner === 0) {
     winModalShownForWinner = 0;
+    clearWinLine();
   }
 }
+
+// Draws a glowing line through the centers of the four (or more) connected
+// winning pieces, so it's visually obvious *how* someone won, not just
+// that the individual pieces are highlighted.
+let winLineCells = null;
+
+function drawWinLine(winningCells) {
+  const svg = document.getElementById("winLineSvg");
+  const line = document.getElementById("winLine");
+  if (!svg || !line || !Array.isArray(winningCells) || winningCells.length < 2) return;
+
+  winLineCells = winningCells;
+
+  const first = winningCells[0];
+  const last = winningCells[winningCells.length - 1];
+  const firstEl = document.getElementById(`cell-${first[0]}-${first[1]}`);
+  const lastEl = document.getElementById(`cell-${last[0]}-${last[1]}`);
+  if (!firstEl || !lastEl) return;
+
+  // Must unhide (display:none -> flex/svg) BEFORE measuring anything below:
+  // a display:none element's getBoundingClientRect() is always all-zeros,
+  // which would silently throw off every coordinate calculated from it.
+  svg.classList.remove("hidden");
+
+  const boardRect = svg.getBoundingClientRect();
+  const r1 = firstEl.getBoundingClientRect();
+  const r2 = lastEl.getBoundingClientRect();
+  const x1 = r1.left + r1.width / 2 - boardRect.left;
+  const y1 = r1.top + r1.height / 2 - boardRect.top;
+  const x2 = r2.left + r2.width / 2 - boardRect.left;
+  const y2 = r2.top + r2.height / 2 - boardRect.top;
+
+  // Scale the line's thickness with the actual rendered cell size, so it
+  // looks right whether the board is phone-sized or desktop-sized.
+  line.setAttribute("stroke-width", Math.max(6, r1.width * 0.16));
+  line.setAttribute("x1", x1);
+  line.setAttribute("y1", y1);
+  line.setAttribute("x2", x2);
+  line.setAttribute("y2", y2);
+
+  // "Draw" the line in from one end rather than just popping in.
+  const length = Math.hypot(x2 - x1, y2 - y1);
+  line.style.transition = "none";
+  line.style.strokeDasharray = `${length}`;
+  line.style.strokeDashoffset = `${length}`;
+  // Force a reflow so the browser registers the starting offset before we
+  // transition it to 0 -- otherwise both changes get batched together and
+  // no animation plays at all.
+  void line.getBoundingClientRect();
+  line.style.transition = "stroke-dashoffset 0.5s ease";
+  line.style.strokeDashoffset = "0";
+}
+
+function clearWinLine() {
+  winLineCells = null;
+  const svg = document.getElementById("winLineSvg");
+  if (svg) svg.classList.add("hidden");
+}
+
+// The board resizes with the viewport (see the responsive board CSS), so a
+// visible win line needs to be redrawn on resize or it'll point at stale
+// coordinates from before the resize.
+window.addEventListener("resize", () => {
+  if (winLineCells) drawWinLine(winLineCells);
+});
 
 function attachLandingHandler(row, col, colorValue, isWinningDrop) {
   const piece = document.getElementById(`cell-${row}-${col}`);

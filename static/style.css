@@ -176,6 +176,28 @@ h1 {
   margin: 0 auto;
   border: var(--board-border) solid #60a5fa;
   box-sizing: border-box;
+  position: relative;
+}
+
+.win-line-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.win-line-svg.hidden {
+  display: none;
+}
+
+#winLine {
+  stroke: #ffffff;
+  stroke-width: 10;
+  stroke-linecap: round;
+  opacity: 0.95;
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.9)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.35));
 }
 
 .cell {
